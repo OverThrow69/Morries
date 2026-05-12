@@ -1,6 +1,19 @@
 # Tower Defence
 
-Hierdie is 'n plaaslike desktop game met zombies en mense.
+Hierdie is 'n plaaslike Python Tkinter desktop game met zombies en mense.
+
+## Main development path
+
+The main game is the Python Tkinter desktop version.
+
+Future development should focus on:
+
+- `main.py` - main desktop game loop, UI, rendering, and gameplay systems
+- `game_config.py` - balance, constants, unit data, and enemy data
+- `game_rules.py` - small testable gameplay rules
+- `tests/` - automated tests for rules and game behavior
+
+`index.html` is only an old browser prototype / legacy version. Keep it for reference for now, but do not treat it as the main game.
 
 ## Hoe om oop te maak
 
@@ -30,13 +43,14 @@ Hierdie is 'n plaaslike desktop game met zombies en mense.
 - Runner - vinnig maar swakker
 - Brute - stadig en taai
 - Armored - verminder inkomende skade
-- Medic - herstel nabygeleë zombies
+- Medic - herstel nabygelee zombies
 
-## Lêers
+## Leers
 
-- `main.py` - die desktop game
+- `main.py` - die hoof Python Tkinter desktop game
 - `game_config.py` - balans, constants en tipe-data
-- `game_rules.py` - klein toetsbare spelreëls
+- `game_rules.py` - klein toetsbare spelreels
+- `tests/` - automated tests
 - `launch.pyw` - stille Python launcher
 - `start_game.vbs` - maak die game oop sonder `cmd`
-- `index.html` - ouer webweergawe/prototipe
+- `index.html` - ouer browser prototype / legacy version, nie die hoof game nie
