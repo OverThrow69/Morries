@@ -1,135 +1,21 @@
 import math
 import os
 import random
-import struct
 import tkinter as tk
-import wave
 import winsound
 
-
-TOP_BAR_HEIGHT = 88
-BOTTOM_BAR_HEIGHT = 180
-LANE_COUNT = 5
-COLUMN_COUNT = 7
-MAX_WAVES = 12
-FRAMES_PER_SECOND = 60
-WAVE_DELAY_SECONDS = 5
-SOUND_DIR = os.path.join(os.path.dirname(__file__), "sounds")
-
-UNIT_TYPES = [
-    {
-        "name": "Soldier",
-        "cost": 45,
-        "base_damage": 10,
-        "base_range": 180,
-        "base_fire_rate": 20,
-        "projectile_speed": 15,
-        "max_hp": 90,
-        "color": "#3b82f6",
-        "accent": "#dbeafe",
-        "upgrade_cost": 22,
-        "projectile_color": "#dbeafe",
-        "short": "Balanced",
-    },
-    {
-        "name": "Hunter",
-        "cost": 58,
-        "base_damage": 18,
-        "base_range": 230,
-        "base_fire_rate": 34,
-        "projectile_speed": 17,
-        "max_hp": 75,
-        "color": "#22c55e",
-        "accent": "#dcfce7",
-        "upgrade_cost": 28,
-        "projectile_color": "#bbf7d0",
-        "short": "Fast shots",
-    },
-    {
-        "name": "Sniper",
-        "cost": 72,
-        "base_damage": 30,
-        "base_range": 340,
-        "base_fire_rate": 54,
-        "projectile_speed": 20,
-        "max_hp": 68,
-        "color": "#a855f7",
-        "accent": "#f3e8ff",
-        "upgrade_cost": 36,
-        "projectile_color": "#e9d5ff",
-        "short": "Long range",
-    },
-    {
-        "name": "Flamethrower",
-        "cost": 68,
-        "base_damage": 8,
-        "base_range": 130,
-        "base_fire_rate": 8,
-        "projectile_speed": 11,
-        "max_hp": 110,
-        "color": "#f97316",
-        "accent": "#ffedd5",
-        "upgrade_cost": 32,
-        "projectile_color": "#fdba74",
-        "short": "Close burst",
-    },
-    {
-        "name": "Engineer",
-        "cost": 82,
-        "base_damage": 20,
-        "base_range": 200,
-        "base_fire_rate": 26,
-        "projectile_speed": 14,
-        "max_hp": 120,
-        "color": "#eab308",
-        "accent": "#fef9c3",
-        "upgrade_cost": 40,
-        "projectile_color": "#fde68a",
-        "short": "Heavy armor",
-    },
-]
-
-ENEMY_TYPES = [
-    {
-        "name": "Walker",
-        "kind": "Zombie",
-        "color": "#84cc16",
-        "accent": "#d9f99d",
-        "base_hp": 56,
-        "speed": 1.1,
-        "damage": 10,
-        "attack_rate": 40,
-        "reward": 14,
-        "radius": 20,
-        "shape": "walker",
-    },
-    {
-        "name": "Runner",
-        "kind": "Zombie",
-        "color": "#22c55e",
-        "accent": "#bbf7d0",
-        "base_hp": 42,
-        "speed": 1.85,
-        "damage": 7,
-        "attack_rate": 28,
-        "reward": 12,
-        "radius": 16,
-        "shape": "runner",
-    },
-    {
-        "name": "Brute",
-        "kind": "Brute",
-        "color": "#4d7c0f",
-        "accent": "#ecfccb",
-        "base_hp": 92,
-        "speed": 0.85,
-        "damage": 16,
-        "attack_rate": 52,
-        "reward": 20,
-        "radius": 25,
-        "shape": "brute",
-    },
-]
+from game_config import (
+    BOTTOM_BAR_HEIGHT,
+    COLUMN_COUNT,
+    FRAMES_PER_SECOND,
+    LANE_COUNT,
+    MAX_WAVES,
+    SOUND_DIR,
+    TOP_BAR_HEIGHT,
+    UNIT_TYPES,
+    WAVE_DELAY_SECONDS,
+)
+from game_rules import choose_enemy_type, damage_after_armor
 
 
 class ModernLaneDefenseGame:
@@ -141,11 +27,13 @@ class ModernLaneDefenseGame:
         self.field_height = self.screen_height - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT
         self.lane_height = self.field_height / LANE_COUNT
         self.base_line_x = 120
-        self.tile_start_x = 180
-        self.tile_gap = 12
-        self.tile_width = 112
+        self.tile_start_x = min(180, max(140, int(self.screen_width * 0.15)))
+        self.tile_gap = max(8, min(12, int(self.screen_width * 0.01)))
+        available_tile_width = max(420, self.screen_width - self.tile_start_x - 180)
+        self.tile_width = min(112, int((available_tile_width - (self.tile_gap * (COLUMN_COUNT - 1))) / COLUMN_COUNT))
         self.tile_height = max(88, int(self.lane_height - 28))
         self.spawn_x = self.screen_width - 120
+        self.unit_card_width = max(150, min(200, int((self.screen_width - 124) / len(UNIT_TYPES))))
         self.sky_color = "#93c5fd"
 
         self.root.title("Stormwall: Humans vs Zombies")
@@ -188,41 +76,15 @@ class ModernLaneDefenseGame:
         self.root.state("zoomed")
 
     def ensure_sound_files(self):
-        os.makedirs(SOUND_DIR, exist_ok=True)
         zombie_sound = os.path.join(SOUND_DIR, "zombie.wav")
         brute_sound = os.path.join(SOUND_DIR, "brute.wav")
-        if not os.path.exists(zombie_sound):
-            self.write_growl_sound(zombie_sound, base_frequency=170, wobble=42, duration=0.28)
-        if not os.path.exists(brute_sound):
-            self.write_growl_sound(brute_sound, base_frequency=110, wobble=26, duration=0.4)
         return {"Zombie": zombie_sound, "Brute": brute_sound}
-
-    def write_growl_sound(self, path, base_frequency, wobble, duration):
-        sample_rate = 22050
-        frames = []
-        total_samples = int(sample_rate * duration)
-        for index in range(total_samples):
-            time_pos = index / sample_rate
-            envelope = max(0.0, 1.0 - (time_pos / duration))
-            frequency = base_frequency + math.sin(time_pos * 32) * wobble
-            sample = (
-                math.sin(2 * math.pi * frequency * time_pos)
-                + 0.6 * math.sin(2 * math.pi * (frequency * 0.48) * time_pos)
-                + 0.2 * math.sin(2 * math.pi * (frequency * 1.9) * time_pos)
-            )
-            value = int(max(-1.0, min(1.0, sample * 0.45 * envelope)) * 32767)
-            frames.append(struct.pack("<h", value))
-        with wave.open(path, "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(b"".join(frames))
 
     def play_enemy_sound(self, enemy_kind):
         if self.frame_count - self.last_sound_frame < 14:
             return
         sound_path = self.sound_paths.get(enemy_kind)
-        if sound_path:
+        if sound_path and os.path.exists(sound_path):
             self.last_sound_frame = self.frame_count
             winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
 
@@ -373,7 +235,7 @@ class ModernLaneDefenseGame:
         for index, unit in enumerate(UNIT_TYPES):
             canvas = tk.Canvas(
                 cards,
-                width=200,
+                width=self.unit_card_width,
                 height=116,
                 bg="#111827",
                 highlightthickness=2,
@@ -400,6 +262,7 @@ class ModernLaneDefenseGame:
         self.wave_total = 0
         self.wave_spawned = 0
         self.wave_defeated = 0
+        self.wave_resolved = 0
         self.ambient_clouds = self.make_clouds()
         self.tiles = self.make_tiles()
         self.update_selected_ui()
@@ -462,18 +325,20 @@ class ModernLaneDefenseGame:
         for index, canvas in enumerate(self.unit_cards):
             unit = UNIT_TYPES[index]
             selected = index == self.selected_unit_index
+            width = self.unit_card_width
+            info_x = min(98, int(width * 0.48))
             canvas.configure(highlightbackground="#fb923c" if selected else "#1f2937")
             canvas.delete("all")
-            canvas.create_rectangle(0, 0, 200, 116, fill="#111827", outline="")
+            canvas.create_rectangle(0, 0, width, 116, fill="#111827", outline="")
             canvas.create_text(14, 14, text=str(index + 1), anchor="w", fill="#e2e8f0", font=("Segoe UI", 12, "bold"))
             canvas.create_text(36, 14, text=unit["name"], anchor="w", fill="#f8fafc", font=("Segoe UI", 11, "bold"))
-            canvas.create_text(188, 14, text=f"{unit['cost']}g", anchor="e", fill="#facc15", font=("Segoe UI", 11, "bold"))
+            canvas.create_text(width - 12, 14, text=f"{unit['cost']}g", anchor="e", fill="#facc15", font=("Segoe UI", 11, "bold"))
             self.draw_unit_portrait(canvas, 18, 32, unit, facing="right")
-            canvas.create_text(98, 50, text=unit["short"], anchor="w", fill="#cbd5e1", font=("Segoe UI", 9, "bold"))
-            canvas.create_text(98, 70, text=f"Range {unit['base_range']}", anchor="w", fill="#94a3b8", font=("Segoe UI", 9))
-            canvas.create_text(98, 88, text=f"Upgrade {unit['upgrade_cost']}", anchor="w", fill="#94a3b8", font=("Segoe UI", 9))
+            canvas.create_text(info_x, 50, text=unit["short"], anchor="w", fill="#cbd5e1", font=("Segoe UI", 9, "bold"))
+            canvas.create_text(info_x, 70, text=f"Range {unit['base_range']}", anchor="w", fill="#94a3b8", font=("Segoe UI", 9))
+            canvas.create_text(info_x, 88, text=f"Upgrade {unit['upgrade_cost']}", anchor="w", fill="#94a3b8", font=("Segoe UI", 9))
             if selected:
-                canvas.create_text(188, 100, text="READY", anchor="e", fill="#fb923c", font=("Segoe UI", 10, "bold"))
+                canvas.create_text(width - 12, 100, text="READY", anchor="e", fill="#fb923c", font=("Segoe UI", 10, "bold"))
 
     def update_hud(self):
         self.gold_var.set(str(self.gold))
@@ -487,8 +352,8 @@ class ModernLaneDefenseGame:
             progress = 1.0
             label = "All waves survived"
         elif self.spawning or self.wave_total > 0:
-            progress = 0 if self.wave_total == 0 else self.wave_defeated / self.wave_total
-            label = f"Wave {min(self.wave, MAX_WAVES)}  |  {self.wave_defeated}/{self.wave_total} cleared"
+            progress = 0 if self.wave_total == 0 else self.wave_resolved / self.wave_total
+            label = f"Wave {min(self.wave, MAX_WAVES)}  |  {self.wave_resolved}/{self.wave_total} resolved"
         else:
             progress = 0 if self.wave > MAX_WAVES else 1 - (self.countdown_frames / (WAVE_DELAY_SECONDS * FRAMES_PER_SECOND))
             seconds = max(0, math.ceil(self.countdown_frames / FRAMES_PER_SECOND))
@@ -508,6 +373,7 @@ class ModernLaneDefenseGame:
         self.wave_total = 4 + (self.wave * 2)
         self.wave_spawned = 0
         self.wave_defeated = 0
+        self.wave_resolved = 0
         for index in range(self.wave_total):
             lane = random.randint(0, LANE_COUNT - 1)
             enemy_blueprint = self.pick_enemy_type(index)
@@ -519,11 +385,7 @@ class ModernLaneDefenseGame:
         self.show_message(f"Wave {self.wave} has started. Zombies are entering from the right.")
 
     def pick_enemy_type(self, index):
-        if self.wave >= 5 and index % 5 == 0:
-            return ENEMY_TYPES[2]
-        if self.wave >= 3 and index % 3 == 0:
-            return ENEMY_TYPES[1]
-        return ENEMY_TYPES[0]
+        return choose_enemy_type(self.wave, index)
 
     def create_enemy(self, blueprint, lane):
         hp_scale = 1 + ((self.wave - 1) * 0.16)
@@ -546,6 +408,10 @@ class ModernLaneDefenseGame:
             "attack_rate": max(14, blueprint["attack_rate"] - self.wave),
             "attack_cooldown": 0,
             "reward": blueprint["reward"] + self.wave,
+            "armor": blueprint.get("armor", 0),
+            "heal": blueprint.get("heal", 0),
+            "slow_frames": 0,
+            "slow_multiplier": 1,
             "bob": random.random() * math.pi * 2,
         }
 
@@ -606,6 +472,7 @@ class ModernLaneDefenseGame:
             "color": unit_type["color"],
             "accent": unit_type["accent"],
             "projectile_color": unit_type["projectile_color"],
+            "ability": unit_type["ability"],
             "upgrade_cost": unit_type["upgrade_cost"],
             "total_spent": unit_type["cost"],
             "shadow": 26,
@@ -711,6 +578,8 @@ class ModernLaneDefenseGame:
 
     def update_units(self):
         for unit in list(self.units):
+            if unit["ability"] == "repair":
+                self.repair_lane_unit(unit)
             if unit["cooldown"] > 0:
                 unit["cooldown"] -= 1
                 continue
@@ -718,16 +587,36 @@ class ModernLaneDefenseGame:
             if not target:
                 continue
             unit["cooldown"] = unit["fire_rate"]
-            self.projectiles.append({
-                "x": unit["x"] + 26,
-                "y": unit["y"] - 20,
-                "lane": unit["lane"],
-                "target": target,
-                "speed": unit["projectile_speed"],
-                "damage": unit["damage"],
-                "color": unit["projectile_color"],
-                "source_id": unit["id"],
-            })
+            shots = 2 if unit["ability"] == "burst" and unit["level"] >= 2 else 1
+            for shot_index in range(shots):
+                self.projectiles.append(self.make_projectile(unit, target, shot_index))
+
+    def repair_lane_unit(self, engineer):
+        candidates = [
+            unit for unit in self.units
+            if unit["lane"] == engineer["lane"] and unit["id"] != engineer["id"] and unit["hp"] < unit["max_hp"]
+        ]
+        if not candidates:
+            return
+        target = min(candidates, key=lambda item: item["hp"] / item["max_hp"])
+        target["hp"] = min(target["max_hp"], target["hp"] + 0.12 + (engineer["level"] * 0.04))
+
+    def make_projectile(self, unit, target, shot_index=0):
+        ability = unit["ability"]
+        return {
+            "x": unit["x"] + 26,
+            "y": unit["y"] - 20 + (shot_index * 8),
+            "lane": unit["lane"],
+            "target": target,
+            "speed": unit["projectile_speed"],
+            "damage": unit["damage"],
+            "color": unit["projectile_color"],
+            "source_id": unit["id"],
+            "ability": ability,
+            "splash_radius": 42 + (unit["level"] * 7) if ability == "splash" else 0,
+            "pierce_left": unit["level"] if ability == "pierce" else 0,
+            "slow_frames": 80 + (unit["level"] * 20) if ability == "slow" else 0,
+        }
 
     def find_target_for_unit(self, unit):
         chosen = None
@@ -759,9 +648,15 @@ class ModernLaneDefenseGame:
                 continue
 
             enemy["x"] -= enemy["speed"]
+            if enemy["slow_frames"] > 0:
+                enemy["x"] += enemy["speed"] * (1 - enemy["slow_multiplier"])
+                enemy["slow_frames"] -= 1
+            if enemy["heal"]:
+                self.heal_nearby_enemies(enemy)
             enemy["bob"] += 0.08
             if enemy["x"] <= self.base_line_x:
                 self.lives -= 1
+                self.wave_resolved += 1
                 self.add_hit_particles(self.base_line_x, enemy["y"] - 8, "#fca5a5")
                 if self.lives <= 0:
                     self.lives = 0
@@ -783,6 +678,13 @@ class ModernLaneDefenseGame:
             return None
         return max(blockers, key=lambda item: item["x"])
 
+    def heal_nearby_enemies(self, medic):
+        for enemy in self.enemies:
+            if enemy is medic or enemy["lane"] != medic["lane"] or enemy["hp"] >= enemy["max_hp"]:
+                continue
+            if abs(enemy["x"] - medic["x"]) <= 130:
+                enemy["hp"] = min(enemy["max_hp"], enemy["hp"] + medic["heal"])
+
     def remove_unit(self, unit_id):
         self.units = [unit for unit in self.units if unit["id"] != unit_id]
         for tile in self.tiles:
@@ -800,19 +702,55 @@ class ModernLaneDefenseGame:
             dy = (target["y"] - 18) - projectile["y"]
             distance = math.hypot(dx, dy)
             if distance <= projectile["speed"] or distance == 0:
-                target["hp"] -= projectile["damage"]
+                self.damage_enemy(target, projectile)
                 self.add_hit_particles(projectile["x"], projectile["y"], projectile["color"])
                 if target["hp"] <= 0:
-                    self.gold += target["reward"]
-                    self.wave_defeated += 1
-                    self.add_death_particles(target["x"], target["y"], target["accent"])
-                    self.enemies = [enemy for enemy in self.enemies if enemy is not target]
-                    self.update_hud()
+                    self.resolve_enemy(target)
+                if projectile["pierce_left"] > 0:
+                    projectile["pierce_left"] -= 1
+                    next_target = self.find_pierce_target(projectile, target)
+                    if next_target:
+                        projectile["target"] = next_target
+                        active.append(projectile)
                 continue
             projectile["x"] += (dx / distance) * projectile["speed"]
             projectile["y"] += (dy / distance) * projectile["speed"]
             active.append(projectile)
         self.projectiles = active
+
+    def damage_enemy(self, enemy, projectile):
+        enemy["hp"] -= damage_after_armor(projectile["damage"], enemy["armor"])
+        if projectile["slow_frames"] > 0:
+            enemy["slow_frames"] = max(enemy["slow_frames"], projectile["slow_frames"])
+            enemy["slow_multiplier"] = 0.62
+        if projectile["splash_radius"] > 0:
+            for splash_target in self.enemies:
+                if splash_target is enemy or splash_target["lane"] != enemy["lane"]:
+                    continue
+                if abs(splash_target["x"] - enemy["x"]) <= projectile["splash_radius"]:
+                    splash_target["hp"] -= damage_after_armor(max(1, projectile["damage"] // 2), splash_target["armor"])
+                    self.add_hit_particles(splash_target["x"], splash_target["y"] - 18, projectile["color"])
+                    if splash_target["hp"] <= 0:
+                        self.resolve_enemy(splash_target)
+
+    def resolve_enemy(self, enemy):
+        if enemy not in self.enemies:
+            return
+        self.gold += enemy["reward"]
+        self.wave_defeated += 1
+        self.wave_resolved += 1
+        self.add_death_particles(enemy["x"], enemy["y"], enemy["accent"])
+        self.enemies = [item for item in self.enemies if item is not enemy]
+        self.update_hud()
+
+    def find_pierce_target(self, projectile, previous_target):
+        candidates = [
+            enemy for enemy in self.enemies
+            if enemy["lane"] == projectile["lane"] and enemy is not previous_target and enemy["x"] > previous_target["x"]
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda enemy: enemy["x"])
 
     def add_hit_particles(self, x, y, color):
         for _ in range(4):
@@ -1038,6 +976,28 @@ class ModernLaneDefenseGame:
             c.create_line(x - 26, y + 18, x - 46, y + 28, fill=skin, width=6, capstyle="round")
             c.create_rectangle(x - 22, y + 34, x - 6, y + 60, fill="#3f3f46", outline="")
             c.create_rectangle(x + 6, y + 34, x + 22, y + 60, fill="#3f3f46", outline="")
+        elif enemy["shape"] == "armored":
+            skin = "#bbf7d0"
+            c.create_oval(x - 14, y - 28, x + 14, y, fill=skin, outline="#334155", width=2)
+            c.create_rectangle(x - 20, y - 30, x + 20, y - 16, fill="#64748b", outline="#334155", width=2)
+            c.create_oval(x - 8, y - 20, x - 2, y - 14, fill="#f8fafc", outline="")
+            c.create_oval(x + 2, y - 20, x + 8, y - 14, fill="#f8fafc", outline="")
+            c.create_rectangle(x - 18, y, x + 18, y + 28, fill=color, outline="#1e293b", width=2)
+            c.create_rectangle(x - 22, y + 6, x + 22, y + 20, fill="#94a3b8", outline="#475569", width=1)
+            c.create_line(x - 18, y + 10, x - 44, y + 9, fill=skin, width=6, capstyle="round")
+            c.create_rectangle(x - 14, y + 28, x - 4, y + 54, fill="#3f3f46", outline="")
+            c.create_rectangle(x + 4, y + 28, x + 14, y + 54, fill="#3f3f46", outline="")
+        elif enemy["shape"] == "medic":
+            skin = "#ccfbf1"
+            c.create_oval(x - 13, y - 28, x + 13, y, fill=skin, outline="#0f766e", width=2)
+            c.create_oval(x - 8, y - 20, x - 2, y - 14, fill="white", outline="")
+            c.create_oval(x + 2, y - 20, x + 8, y - 14, fill="white", outline="")
+            c.create_rectangle(x - 15, y, x + 15, y + 28, fill=color, outline="")
+            c.create_rectangle(x - 4, y + 6, x + 4, y + 22, fill="#f8fafc", outline="")
+            c.create_rectangle(x - 11, y + 12, x + 11, y + 16, fill="#f8fafc", outline="")
+            c.create_line(x - 15, y + 9, x - 38, y + 7, fill=skin, width=6, capstyle="round")
+            c.create_rectangle(x - 12, y + 28, x - 2, y + 52, fill="#3f3f46", outline="")
+            c.create_rectangle(x + 2, y + 28, x + 12, y + 52, fill="#3f3f46", outline="")
         else:
             skin = "#bbf7d0"
             c.create_oval(x - 13, y - 28, x + 13, y, fill=skin, outline="#4d7c0f", width=2)
@@ -1051,6 +1011,8 @@ class ModernLaneDefenseGame:
             c.create_line(x - 14, y + 16, x - 34, y + 24, fill=skin, width=4, capstyle="round")
             c.create_rectangle(x - 12, y + 26, x - 2, y + 52, fill="#3f3f46", outline="")
             c.create_rectangle(x + 2, y + 26, x + 12, y + 52, fill="#3f3f46", outline="")
+        if enemy["slow_frames"] > 0:
+            c.create_oval(x - 24, y - 36, x + 24, y + 60, outline="#67e8f9", width=2)
 
     def draw_health_bar(self, x, y, width, hp, max_hp, fill_color):
         self.field_canvas.create_rectangle(x, y, x + width, y + 7, fill="#111827", outline="")
