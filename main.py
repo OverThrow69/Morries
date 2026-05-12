@@ -635,6 +635,9 @@ class ModernLaneDefenseGame:
         for enemy in self.enemies:
             if enemy["attack_cooldown"] > 0:
                 enemy["attack_cooldown"] -= 1
+            is_slowed = enemy["slow_frames"] > 0
+            if is_slowed:
+                enemy["slow_frames"] -= 1
 
             blocker = self.find_blocking_unit(enemy)
             if blocker:
@@ -648,9 +651,8 @@ class ModernLaneDefenseGame:
                 continue
 
             enemy["x"] -= enemy["speed"]
-            if enemy["slow_frames"] > 0:
+            if is_slowed:
                 enemy["x"] += enemy["speed"] * (1 - enemy["slow_multiplier"])
-                enemy["slow_frames"] -= 1
             if enemy["heal"]:
                 self.heal_nearby_enemies(enemy)
             enemy["bob"] += 0.08
@@ -724,14 +726,20 @@ class ModernLaneDefenseGame:
             enemy["slow_frames"] = max(enemy["slow_frames"], projectile["slow_frames"])
             enemy["slow_multiplier"] = 0.62
         if projectile["splash_radius"] > 0:
-            for splash_target in self.enemies:
-                if splash_target is enemy or splash_target["lane"] != enemy["lane"]:
-                    continue
-                if abs(splash_target["x"] - enemy["x"]) <= projectile["splash_radius"]:
-                    splash_target["hp"] -= damage_after_armor(max(1, projectile["damage"] // 2), splash_target["armor"])
-                    self.add_hit_particles(splash_target["x"], splash_target["y"] - 18, projectile["color"])
-                    if splash_target["hp"] <= 0:
-                        self.resolve_enemy(splash_target)
+            splash_targets = [
+                splash_target for splash_target in self.enemies
+                if splash_target is not enemy
+                and splash_target["lane"] == enemy["lane"]
+                and abs(splash_target["x"] - enemy["x"]) <= projectile["splash_radius"]
+            ]
+            dead_splash_targets = []
+            for splash_target in splash_targets:
+                splash_target["hp"] -= damage_after_armor(max(1, projectile["damage"] // 2), splash_target["armor"])
+                self.add_hit_particles(splash_target["x"], splash_target["y"] - 18, projectile["color"])
+                if splash_target["hp"] <= 0:
+                    dead_splash_targets.append(splash_target)
+            for splash_target in dead_splash_targets:
+                self.resolve_enemy(splash_target)
 
     def resolve_enemy(self, enemy):
         if enemy not in self.enemies:
