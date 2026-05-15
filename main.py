@@ -603,6 +603,7 @@ class ModernLaneDefenseGame:
 
     def make_projectile(self, unit, target, shot_index=0):
         ability = unit["ability"]
+        level = unit["level"]
         return {
             "x": unit["x"] + 26,
             "y": unit["y"] - 20 + (shot_index * 8),
@@ -613,22 +614,34 @@ class ModernLaneDefenseGame:
             "color": unit["projectile_color"],
             "source_id": unit["id"],
             "ability": ability,
-            "splash_radius": 42 + (unit["level"] * 7) if ability == "splash" else 0,
-            "pierce_left": unit["level"] if ability == "pierce" else 0,
-            "slow_frames": 80 + (unit["level"] * 20) if ability == "slow" else 0,
+            "unit_name": unit["name"],
+            "level": level,
+            "projectile_style": self.projectile_style_for(unit),
+            "splash_radius": 42 + (level * 7) if ability == "splash" else 0,
+            "pierce_left": level if ability == "pierce" else 0,
+            "slow_frames": 80 + (level * 20) if ability == "slow" else 0,
         }
 
+    def projectile_style_for(self, unit):
+        ability = unit["ability"]
+        level = unit["level"]
+        if ability == "slow":
+            return "icy" if level == 2 else "frost_bolt" if level >= 3 else "slow_shot"
+        if ability == "pierce":
+            return "long_tracer" if level >= 3 else "piercing_tracer" if level == 2 else "thin_shot"
+        if ability == "splash":
+            return "hot_flame" if level >= 3 else "wide_flame" if level == 2 else "small_flame"
+        if ability == "repair":
+            return "tech_bolt" if level >= 3 else "electric_tool" if level == 2 else "tool_shot"
+        if ability == "burst" and level >= 3:
+            return "burst_tracer"
+        return "burst_bullet" if ability == "burst" and level == 2 else "bullet"
+
     def find_target_for_unit(self, unit):
-        chosen = None
-        for enemy in self.enemies:
-            if enemy["lane"] != unit["lane"]:
-                continue
-            distance = enemy["x"] - unit["x"]
-            if distance < 0 or distance > unit["range"]:
-                continue
-            if chosen is None or enemy["x"] < chosen["x"]:
-                chosen = enemy
-        return chosen
+        candidates = [enemy for enemy in self.enemies if enemy["lane"] == unit["lane"]]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda enemy: enemy["x"])
 
     def update_enemies(self):
         remaining = []
@@ -927,18 +940,39 @@ class ModernLaneDefenseGame:
 
     def draw_unit_portrait(self, canvas, x, y, unit, facing="right"):
         d = 1 if facing == "right" else -1
+        level = unit.get("level", 1)
+        ability = unit.get("ability", "")
+        outline = "#f8fafc" if level >= 3 else "#fde68a" if level == 2 else ""
+        outline_width = 3 if level >= 3 else 2 if level == 2 else 0
+        weapon_width = 5 + level
+        weapon_tip = 38 + (level * 4)
+        weapon_color = "#e2e8f0" if level >= 3 else "#94a3b8" if level == 2 else "#64748b"
         canvas.create_rectangle(x - 12, y + 32, x - 2, y + 52, fill="#374151", outline="")
         canvas.create_rectangle(x + 2, y + 32, x + 12, y + 52, fill="#374151", outline="")
-        canvas.create_rectangle(x - 16, y + 4, x + 16, y + 36, fill=unit["color"], outline="")
+        canvas.create_rectangle(x - 16, y + 4, x + 16, y + 36, fill=unit["color"], outline=outline, width=outline_width)
         canvas.create_oval(x - 18, y - 32, x + 18, y + 6, fill="#fde68a", outline="#f59e0b", width=2)
         canvas.create_arc(x - 18, y - 40, x + 18, y - 14, start=0, extent=180, fill=unit["color"], outline=unit["color"])
+        if level >= 2:
+            canvas.create_rectangle(x - 20, y - 37, x + 20, y - 25, fill=unit["color"], outline="#f8fafc" if level >= 3 else "#e2e8f0", width=2)
+            canvas.create_rectangle(x - 24, y + 8, x - 14, y + 24, fill="#475569", outline="#cbd5e1", width=1)
+            canvas.create_rectangle(x + 14, y + 8, x + 24, y + 24, fill="#475569", outline="#cbd5e1", width=1)
+        if level >= 3:
+            canvas.create_oval(x - 22, y - 36, x + 22, y + 40, outline="#fef08a", width=2)
         canvas.create_oval(x - 10, y - 22, x - 2, y - 14, fill="white", outline="")
         canvas.create_oval(x + 2, y - 22, x + 10, y - 14, fill="white", outline="")
         canvas.create_oval(x - 9 + d, y - 21, x - 3 + d, y - 15, fill="#111827", outline="")
         canvas.create_oval(x + 3 + d, y - 21, x + 9 + d, y - 15, fill="#111827", outline="")
         canvas.create_arc(x - 7, y - 8, x + 7, y + 2, start=200, extent=140, style="arc", outline="#92400e", width=2)
-        canvas.create_line(x + (12 * d), y + 12, x + (38 * d), y + 2, fill="#64748b", width=5, capstyle="round")
-        canvas.create_oval(x + (34 * d) - 5, y - 3, x + (34 * d) + 5, y + 7, fill="#475569", outline="")
+        if ability == "splash":
+            weapon_color = "#fb923c" if level < 3 else "#fef08a"
+        elif ability == "slow":
+            weapon_color = "#67e8f9" if level >= 2 else weapon_color
+        elif ability == "repair":
+            weapon_color = "#fde047" if level < 3 else "#5eead4"
+        canvas.create_line(x + (12 * d), y + 12, x + (weapon_tip * d), y + 2, fill=weapon_color, width=weapon_width, capstyle="round")
+        canvas.create_oval(x + ((weapon_tip - 4) * d) - 5, y - 3, x + ((weapon_tip - 4) * d) + 5, y + 7, fill="#475569", outline="")
+        for star in range(level):
+            canvas.create_text(x - 14 + (star * 14), y + 46, text="*", fill="#facc15", font=("Segoe UI", 10, "bold"))
 
     def draw_enemies(self):
         for enemy in self.enemies:
@@ -1029,20 +1063,46 @@ class ModernLaneDefenseGame:
 
     def draw_projectiles(self):
         for projectile in self.projectiles:
+            x = projectile["x"]
+            y = projectile["y"]
+            color = projectile["color"]
+            level = projectile.get("level", 1)
+            style = projectile.get("projectile_style", "bullet")
+            radius = 4 + level
+            if style in ("thin_shot", "piercing_tracer", "long_tracer", "burst_tracer"):
+                trail = 18 + (level * 8)
+                self.field_canvas.create_line(x - trail, y, x + 6, y, fill=color, width=level + 1, capstyle="round")
+                if level >= 2:
+                    self.field_canvas.create_line(x - trail - 8, y + 4, x - 4, y + 4, fill="#f8fafc", width=1)
+            elif style in ("small_flame", "wide_flame", "hot_flame"):
+                flame = 8 + (level * 4)
+                fill = "#f97316" if level == 1 else "#fb923c" if level == 2 else "#fef08a"
+                self.field_canvas.create_polygon(
+                    x - flame, y,
+                    x, y - flame,
+                    x + flame, y,
+                    x, y + flame,
+                    fill=fill,
+                    outline="#ef4444" if level >= 2 else color,
+                )
+            elif style in ("icy", "frost_bolt"):
+                self.field_canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill="#67e8f9", outline="#cffafe", width=level)
+                self.field_canvas.create_line(x - radius - 6, y, x + radius + 6, y, fill="#cffafe", width=1)
+                self.field_canvas.create_line(x, y - radius - 6, x, y + radius + 6, fill="#cffafe", width=1)
+            elif style in ("tool_shot", "electric_tool", "tech_bolt"):
+                self.field_canvas.create_rectangle(x - radius, y - radius, x + radius, y + radius, fill=color, outline="#fef9c3", width=level)
+                if level >= 2:
+                    self.field_canvas.create_line(x - 12, y + 8, x, y - 8, x + 12, y + 8, fill="#5eead4", width=2)
+            else:
+                self.field_canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=color, outline="")
+                if level >= 3:
+                    self.field_canvas.create_line(x - 18, y, x - 6, y, fill="#f8fafc", width=2, capstyle="round")
             self.field_canvas.create_oval(
-                projectile["x"] - 5,
-                projectile["y"] - 5,
-                projectile["x"] + 5,
-                projectile["y"] + 5,
-                fill=projectile["color"],
-                outline="",
-            )
-            self.field_canvas.create_oval(
-                projectile["x"] - 10,
-                projectile["y"] - 10,
-                projectile["x"] + 10,
-                projectile["y"] + 10,
-                outline=projectile["color"],
+                x - (radius + 5),
+                y - (radius + 5),
+                x + (radius + 5),
+                y + (radius + 5),
+                outline=color,
             )
 
     def draw_particles(self):
