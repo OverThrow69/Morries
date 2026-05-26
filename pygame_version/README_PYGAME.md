@@ -43,6 +43,34 @@ Automatic reports are disabled by default. To enable them for local testing, set
 AUTO_VISUAL_REPORT_SECONDS = 30
 ```
 
+## Weekly Excel Report
+
+Generate a weekly Excel status workbook with:
+
+```text
+py pygame_version/generate_weekly_report.py
+```
+
+Or double-click:
+
+```text
+generate_weekly_report.bat
+```
+
+The workbook is saved to:
+
+```text
+pygame_version/reports/weekly_report_YYYY-MM-DD.xlsx
+```
+
+The generator uses `openpyxl`. If it is not installed, run:
+
+```text
+py -m pip install openpyxl
+```
+
+The workbook includes summary status, visual report files, gameplay prototype status, test output, compile checks, git status, known bugs/risks, and recommended next steps.
+
 ## Phase 1 Scope
 
 - Opens a Pygame window.
